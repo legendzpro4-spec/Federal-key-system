@@ -10,7 +10,7 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const OWNER_ID = 'YOUR_DISCORD_USER_ID_HERE';  // ← replace with your actual Discord ID (right-click yourself → Copy User ID)
+const OWNER_ID = '1424707396395339776';  // ← your Discord user ID (only you can use commands)
 const KEYS_FILE = './keys.json';
 
 // Load or initialize keys
@@ -26,40 +26,22 @@ function saveKeys() {
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
 
-  // /genkey (only you can use)
+  // Register commands
   const genCmd = new SlashCommandBuilder()
     .setName('genkey')
-    .setDescription('Generate a key - choose uses & duration')
-    .addIntegerOption(opt => 
-      opt.setName('uses')
-        .setDescription('Max uses (leave blank = unlimited)')
-        .setRequired(false)
-        .setMinValue(1)
-    )
-    .addIntegerOption(opt => 
-      opt.setName('hours')
-        .setDescription('Hours until expiry (leave blank = never)')
-        .setRequired(false)
-        .setMinValue(1)
-    )
+    .setDescription('Generate a key with custom uses & expiration')
+    .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
+    .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
-  // /deactivate-key (only you)
   const deactCmd = new SlashCommandBuilder()
     .setName('deactivate-key')
-    .setDescription('Deactivate / invalidate a key')
-    .addStringOption(opt => 
-      opt.setName('key')
-        .setDescription('The key to deactivate (e.g. FED-ABCDE-FGHIJ)')
-        .setRequired(true)
-    )
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+    .setDescription('Deactivate a key')
+    .addStringOption(opt => opt.setName('key').setDescription('The key to deactivate').setRequired(true));
 
-  // /list-keys (only you)
   const listCmd = new SlashCommandBuilder()
     .setName('list-keys')
-    .setDescription('List all active keys with uses & expiration')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+    .setDescription('List all active keys');
 
   await client.application.commands.create(genCmd);
   await client.application.commands.create(deactCmd);
@@ -71,7 +53,7 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
-  // Restrict to you (owner) only
+  // Only your ID can use these commands
   if (interaction.user.id !== OWNER_ID) {
     return interaction.reply({ content: 'Only the bot owner can use these commands.', ephemeral: true });
   }
@@ -80,21 +62,18 @@ client.on('interactionCreate', async interaction => {
     const maxUses = interaction.options.getInteger('uses');
     const hours = interaction.options.getInteger('hours');
 
-    // Generate random key
     const part1 = Math.random().toString(36).slice(2, 7).toUpperCase();
     const part2 = Math.random().toString(36).slice(2, 7).toUpperCase();
     const key = `FED-${part1}-${part2}`;
 
-    // Expiration time
     let expires = null;
     if (hours) {
       expires = Date.now() + (hours * 60 * 60 * 1000);
     }
 
-    // Store the key
     keys[key] = {
       active: true,
-      remainingUses: maxUses || null,   // null = unlimited
+      remainingUses: maxUses || null,
       expires: expires,
       generatedAt: Date.now(),
       generatedBy: interaction.user.tag
@@ -102,7 +81,6 @@ client.on('interactionCreate', async interaction => {
 
     saveKeys();
 
-    // Reply
     let msg = `**Key generated & activated:**\n\`\`\`${key}\`\`\``;
     msg += `\nUses allowed: ${maxUses ? maxUses : 'unlimited'}`;
     msg += `\nExpires: ${hours ? `in ${hours} hours` : 'never'}`;
