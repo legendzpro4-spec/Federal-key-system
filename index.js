@@ -1,4 +1,5 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { Octokit } = require("@octokit/rest");
 const fs = require('fs');
 
 const client = new Client({
@@ -10,65 +11,89 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const OWNER_ID = '1424707396395339776';  // your Discord user ID
-const KEYS_FILE = './keys.json';
-const YOUR_SERVER_ID = '1448399752201900045';  // your server ID - added for fast command sync
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;  // ← add this in Railway Variables
+const REPO_OWNER = 'legendzpro4-spec';
+const REPO_NAME = 'Federal-key-system';
+const FILE_PATH = 'active_keys.json';
 
-// Load or initialize keys
+const OWNER_ID = '1424707396395339776';
+
+const octokit = new Octokit({ auth: GITHUB_TOKEN });
+
 let keys = {};
-if (fs.existsSync(KEYS_FILE)) {
-  keys = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'));
+
+// Load keys from GitHub
+async function loadKeys() {
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: REPO_OWNER,
+      repo: REPO_NAME,
+      path: FILE_PATH
+    });
+    const content = Buffer.from(data.content, 'base64').toString();
+    keys = JSON.parse(content);
+    console.log('Loaded keys from GitHub');
+  } catch (err) {
+    console.log('No keys file or error:', err.message);
+    keys = {};
+  }
 }
 
-function saveKeys() {
-  fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2));
-}
+// Save keys to GitHub (commit)
+async function saveKeys(commitMsg = 'Update active keys via bot') {
+  const content = Buffer.from(JSON.stringify(keys, null, 2)).toString('base64');
+  
+  let sha = null;
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: REPO_OWNER,
+      repo: REPO_NAME,
+      path: FILE_PATH
+    });
+    sha = data.sha;
+  } catch {}
 
-// Health check server (fixes Railway "deploying" hang)
-const http = require('http');
-const PORT = process.env.PORT || 8080;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot is alive');
-}).listen(PORT);
-console.log(`Health check server listening on port ${PORT}`);
+  await octokit.repos.createOrUpdateFileContents({
+    owner: REPO_OWNER,
+    repo: REPO_NAME,
+    path: FILE_PATH,
+    message: commitMsg,
+    content: content,
+    sha: sha || undefined,
+    branch: 'main'
+  });
+  console.log('Committed keys to GitHub');
+}
 
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
+  await loadKeys();
 
-  // Register commands in YOUR SPECIFIC SERVER only (instant sync)
-  const guild = client.guilds.cache.get(YOUR_SERVER_ID);
-  if (guild) {
-    const genCmd = new SlashCommandBuilder()
-      .setName('genkey')
-      .setDescription('Generate a key with custom uses & expiration')
-      .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
-      .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1));
+  const genCmd = new SlashCommandBuilder()
+    .setName('genkey')
+    .setDescription('Generate a key with custom uses & expiration')
+    .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
+    .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1));
 
-    const deactCmd = new SlashCommandBuilder()
-      .setName('deactivate-key')
-      .setDescription('Deactivate a key')
-      .addStringOption(opt => opt.setName('key').setDescription('The key to deactivate').setRequired(true));
+  const deactCmd = new SlashCommandBuilder()
+    .setName('deactivate-key')
+    .setDescription('Deactivate a key')
+    .addStringOption(opt => opt.setName('key').setDescription('The key to deactivate').setRequired(true));
 
-    const listCmd = new SlashCommandBuilder()
-      .setName('list-keys')
-      .setDescription('List all active keys');
+  const listCmd = new SlashCommandBuilder()
+    .setName('list-keys')
+    .setDescription('List all active keys');
 
-    await guild.commands.set([
-      genCmd.toJSON(),
-      deactCmd.toJSON(),
-      listCmd.toJSON()
-    ]);
-    console.log('Commands registered INSTANTLY in your server (guild-specific)');
-  } else {
-    console.log('Guild not found - falling back to global registration (slow)');
-  }
+  await client.application.commands.create(genCmd);
+  await client.application.commands.create(deactCmd);
+  await client.application.commands.create(listCmd);
+
+  console.log('Commands registered');
 });
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
-  // Only you can use these commands
   if (interaction.user.id !== OWNER_ID) {
     return interaction.reply({ content: 'Only the bot owner can use these commands.', ephemeral: true });
   }
@@ -82,9 +107,7 @@ client.on('interactionCreate', async interaction => {
     const key = `FED-${part1}-${part2}`;
 
     let expires = null;
-    if (hours) {
-      expires = Date.now() + (hours * 60 * 60 * 1000);
-    }
+    if (hours) expires = Date.now() + (hours * 60 * 60 * 1000);
 
     keys[key] = {
       active: true,
@@ -94,10 +117,10 @@ client.on('interactionCreate', async interaction => {
       generatedBy: interaction.user.tag
     };
 
-    saveKeys();
+    await saveKeys(`Generated new key: ${key}`);
 
-    let msg = `**Key generated & activated:**\n\`\`\`${key}\`\`\``;
-    msg += `\nUses allowed: ${maxUses ? maxUses : 'unlimited'}`;
+    let msg = `**Key generated & committed to GitHub:**\n\`\`\`${key}\`\`\``;
+    msg += `\nUses: ${maxUses ? maxUses : 'unlimited'}`;
     msg += `\nExpires: ${hours ? `in ${hours} hours` : 'never'}`;
 
     await interaction.reply({ content: msg, ephemeral: true });
@@ -108,8 +131,8 @@ client.on('interactionCreate', async interaction => {
 
     if (keys[keyToDeact]) {
       keys[keyToDeact].active = false;
-      saveKeys();
-      await interaction.reply({ content: `Key **${keyToDeact}** deactivated.`, ephemeral: true });
+      await saveKeys(`Deactivated key: ${keyToDeact}`);
+      await interaction.reply({ content: `Key **${keyToDeact}** deactivated and updated on GitHub.`, ephemeral: true });
     } else {
       await interaction.reply({ content: `Key **${keyToDeact}** not found.`, ephemeral: true });
     }
