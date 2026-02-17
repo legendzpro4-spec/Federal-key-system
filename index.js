@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { Octokit } = require("@octokit/rest");
 const fs = require('fs');
 
 const client = new Client({
@@ -11,20 +10,42 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;  // your PAT in Railway
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO_OWNER = 'legendzpro4-spec';
 const REPO_NAME = 'Federal-key-system';
 const FILE_PATH = 'active_keys.json';
 
 const OWNER_ID = '1424707396395339776';
-const YOUR_SERVER_ID = '1448399752201900045';  // your server ID
+const YOUR_SERVER_ID = '1448399752201900045';
 
-const octokit = new Octokit({ auth: GITHUB_TOKEN });
+// Health check server (prevents Railway hang)
+const http = require('http');
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot is alive');
+}).listen(PORT);
+console.log(`Health check server listening on port ${PORT}`);
+
+// Dynamic import for Octokit (fixes ERR_REQUIRE_ESM crash)
+let Octokit;
+let octokit;
+
+(async () => {
+  const module = await import("@octokit/rest");
+  Octokit = module.Octokit;
+  octokit = new Octokit({ auth: GITHUB_TOKEN });
+  console.log('Octokit loaded successfully');
+})();
 
 let keys = {};
 
 // Load keys from GitHub
 async function loadKeys() {
+  if (!octokit) {
+    console.log('Waiting for Octokit to load...');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // simple wait - improve if needed
+  }
   try {
     const { data } = await octokit.repos.getContent({
       owner: REPO_OWNER,
@@ -40,8 +61,9 @@ async function loadKeys() {
   }
 }
 
-// Save to GitHub
+// Save keys to GitHub
 async function saveKeys(commitMsg = 'Update active keys via bot') {
+  if (!octokit) return console.log('Octokit not ready - skipping save');
   const content = Buffer.from(JSON.stringify(keys, null, 2)).toString('base64');
   
   let sha = null;
@@ -66,20 +88,11 @@ async function saveKeys(commitMsg = 'Update active keys via bot') {
   console.log('Committed keys to GitHub');
 }
 
-// Health check server (fixes Railway "deploying" hang)
-const http = require('http');
-const PORT = process.env.PORT || 8080;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot is alive');
-}).listen(PORT);
-console.log(`Health check server listening on port ${PORT}`);
-
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
   await loadKeys();
 
-  // Register in your server only (instant)
+  // Guild-specific registration (instant)
   const guild = client.guilds.cache.get(YOUR_SERVER_ID);
   if (guild) {
     const genCmd = new SlashCommandBuilder()
