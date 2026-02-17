@@ -1,6 +1,7 @@
 {
   "name": "federal-key-bot",
   "version": "1.0.0",
+  "description": "Discord bot for generating and managing keys",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -10,5 +11,7 @@
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "author": "",
+  "license": "ISC"
 }
