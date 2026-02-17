@@ -1,5 +1,5 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
+const { Client, GatewayIntentBits, SlashCommandBuilder } = require('discord.js');
+const fetch = require('node-fetch');
 
 const client = new Client({
   intents: [
@@ -10,15 +10,16 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const REPO_OWNER = 'legendzpro4-spec';
-const REPO_NAME = 'Federal-key-system';
-const FILE_PATH = 'active_keys.json';
+const PASTEBIN_DEV_KEY = process.env.PASTEBIN_DEV_KEY;
+const PASTEBIN_PASTE_ID = 'U4xGsV2D';  // your fixed paste
+const PASTEBIN_RAW_URL = `https://pastebin.com/raw/${PASTEBIN_PASTE_ID}`;
 
 const OWNER_ID = '1424707396395339776';
 const YOUR_SERVER_ID = '1448399752201900045';
 
-// Health check server (prevents Railway hang)
+let keys = {};
+
+// Health check server (fixes Railway hang)
 const http = require('http');
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
@@ -27,77 +28,64 @@ http.createServer((req, res) => {
 }).listen(PORT);
 console.log(`Health check server listening on port ${PORT}`);
 
-// Dynamic import for Octokit (fixes ERR_REQUIRE_ESM crash)
-let Octokit;
-let octokit;
-
-(async () => {
-  const module = await import("@octokit/rest");
-  Octokit = module.Octokit;
-  octokit = new Octokit({ auth: GITHUB_TOKEN });
-  console.log('Octokit loaded successfully');
-})();
-
-let keys = {};
-
-// Load keys from GitHub
+// Load keys from Pastebin
 async function loadKeys() {
-  if (!octokit) {
-    console.log('Waiting for Octokit to load...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // simple wait - improve if needed
-  }
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: REPO_OWNER,
-      repo: REPO_NAME,
-      path: FILE_PATH
-    });
-    const content = Buffer.from(data.content, 'base64').toString();
-    keys = JSON.parse(content);
-    console.log('Loaded keys from GitHub');
+    const res = await fetch(PASTEBIN_RAW_URL);
+    if (!res.ok) throw new Error(`Pastebin fetch failed: ${res.status}`);
+    const text = await res.text();
+    keys = JSON.parse(text);
+    console.log('Loaded keys from Pastebin');
   } catch (err) {
-    console.log('No keys file or error:', err.message);
+    console.log('Pastebin load error (starting empty):', err.message);
     keys = {};
   }
 }
 
-// Save keys to GitHub
-async function saveKeys(commitMsg = 'Update active keys via bot') {
-  if (!octokit) return console.log('Octokit not ready - skipping save');
-  const content = Buffer.from(JSON.stringify(keys, null, 2)).toString('base64');
-  
-  let sha = null;
+// Save keys to Pastebin (overwrite same paste)
+async function saveKeys(commitMsg = 'Update keys via bot') {
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: REPO_OWNER,
-      repo: REPO_NAME,
-      path: FILE_PATH
-    });
-    sha = data.sha;
-  } catch {}
+    const content = JSON.stringify(keys, null, 2);
 
-  await octokit.repos.createOrUpdateFileContents({
-    owner: REPO_OWNER,
-    repo: REPO_NAME,
-    path: FILE_PATH,
-    message: commitMsg,
-    content: content,
-    sha: sha || undefined,
-    branch: 'main'
-  });
-  console.log('Committed keys to GitHub');
+    const formData = new URLSearchParams();
+    formData.append('api_dev_key', PASTEBIN_DEV_KEY);
+    formData.append('api_option', 'paste');
+    formData.append('api_paste_code', content);
+    formData.append('api_paste_private', '1');      // unlisted
+    formData.append('api_paste_name', 'Federal Keys');
+    formData.append('api_paste_expire_date', 'N');  // never expire
+    formData.append('api_paste_format', 'json');
+
+    // To overwrite existing paste, add these two lines
+    formData.append('api_paste_key', PASTEBIN_PASTE_ID);  // <-- key to edit existing paste
+
+    const res = await fetch('https://pastebin.com/api/api_post.php', {
+      method: 'POST',
+      body: formData,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+
+    const result = await res.text();
+
+    if (result.startsWith('Bad API request') || result.startsWith('Invalid')) {
+      throw new Error(result);
+    }
+
+    console.log('Successfully overwrote Pastebin paste:', PASTEBIN_PASTE_ID);
+  } catch (err) {
+    console.error('Pastebin save error:', err.message);
+  }
 }
 
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
   await loadKeys();
 
-  // Guild-specific registration (instant)
   const guild = client.guilds.cache.get(YOUR_SERVER_ID);
   if (guild) {
     const genCmd = new SlashCommandBuilder()
       .setName('genkey')
-      .setDescription('Generate a key with custom uses & expiration')
+      .setDescription('Generate a key')
       .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
       .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1));
 
@@ -115,7 +103,7 @@ client.once('ready', async () => {
       deactCmd.toJSON(),
       listCmd.toJSON()
     ]);
-    console.log('Commands registered INSTANTLY in your server');
+    console.log('Commands registered in your server');
   } else {
     console.log('Guild not found');
   }
@@ -149,7 +137,7 @@ client.on('interactionCreate', async interaction => {
 
     await saveKeys(`Generated new key: ${key}`);
 
-    let msg = `**Key generated & committed to GitHub:**\n\`\`\`${key}\`\`\``;
+    let msg = `**Key generated & saved to Pastebin:**\n\`\`\`${key}\`\`\``;
     msg += `\nUses: ${maxUses ? maxUses : 'unlimited'}`;
     msg += `\nExpires: ${hours ? `in ${hours} hours` : 'never'}`;
 
@@ -162,7 +150,7 @@ client.on('interactionCreate', async interaction => {
     if (keys[keyToDeact]) {
       keys[keyToDeact].active = false;
       await saveKeys(`Deactivated key: ${keyToDeact}`);
-      await interaction.reply({ content: `Key **${keyToDeact}** deactivated and updated on GitHub.`, ephemeral: true });
+      await interaction.reply({ content: `Key **${keyToDeact}** deactivated and updated on Pastebin.`, ephemeral: true });
     } else {
       await interaction.reply({ content: `Key **${keyToDeact}** not found.`, ephemeral: true });
     }
