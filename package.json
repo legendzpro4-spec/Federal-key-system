@@ -1,13 +1,14 @@
 {
   "name": "federal-key-bot",
   "version": "1.0.0",
-  "description": "Discord bot for generating and managing keys",
+  "description": "Discord bot for key generation and management",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3"
+    "discord.js": "^14.16.3",
+    "@octokit/rest": "^21.0.0"
   },
   "engines": {
     "node": ">=18"
