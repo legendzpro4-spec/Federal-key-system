@@ -11,12 +11,13 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;  // ← add this in Railway Variables
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;  // ← your PAT in Railway Variables
 const REPO_OWNER = 'legendzpro4-spec';
 const REPO_NAME = 'Federal-key-system';
 const FILE_PATH = 'active_keys.json';
 
 const OWNER_ID = '1424707396395339776';
+const YOUR_SERVER_ID = '1448399752201900045';  // your server ID for instant command sync
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
@@ -65,30 +66,46 @@ async function saveKeys(commitMsg = 'Update active keys via bot') {
   console.log('Committed keys to GitHub');
 }
 
+// Health check server (prevents Railway "deploying" hang)
+const http = require('http');
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot is alive');
+}).listen(PORT);
+console.log(`Health check server listening on port ${PORT}`);
+
 client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
   await loadKeys();
 
-  const genCmd = new SlashCommandBuilder()
-    .setName('genkey')
-    .setDescription('Generate a key with custom uses & expiration')
-    .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
-    .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1));
+  // Register commands in your specific server (instant sync)
+  const guild = client.guilds.cache.get(YOUR_SERVER_ID);
+  if (guild) {
+    const genCmd = new SlashCommandBuilder()
+      .setName('genkey')
+      .setDescription('Generate a key with custom uses & expiration')
+      .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
+      .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1));
 
-  const deactCmd = new SlashCommandBuilder()
-    .setName('deactivate-key')
-    .setDescription('Deactivate a key')
-    .addStringOption(opt => opt.setName('key').setDescription('The key to deactivate').setRequired(true));
+    const deactCmd = new SlashCommandBuilder()
+      .setName('deactivate-key')
+      .setDescription('Deactivate a key')
+      .addStringOption(opt => opt.setName('key').setDescription('The key to deactivate').setRequired(true));
 
-  const listCmd = new SlashCommandBuilder()
-    .setName('list-keys')
-    .setDescription('List all active keys');
+    const listCmd = new SlashCommandBuilder()
+      .setName('list-keys')
+      .setDescription('List all active keys');
 
-  await client.application.commands.create(genCmd);
-  await client.application.commands.create(deactCmd);
-  await client.application.commands.create(listCmd);
-
-  console.log('Commands registered');
+    await guild.commands.set([
+      genCmd.toJSON(),
+      deactCmd.toJSON(),
+      listCmd.toJSON()
+    ]);
+    console.log('Commands registered INSTANTLY in your server');
+  } else {
+    console.log('Guild not found - falling back to global registration');
+  }
 });
 
 client.on('interactionCreate', async interaction => {
