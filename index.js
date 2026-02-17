@@ -11,13 +11,13 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;  // ← your PAT in Railway Variables
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;  // your PAT in Railway
 const REPO_OWNER = 'legendzpro4-spec';
 const REPO_NAME = 'Federal-key-system';
 const FILE_PATH = 'active_keys.json';
 
 const OWNER_ID = '1424707396395339776';
-const YOUR_SERVER_ID = '1448399752201900045';  // your server ID for instant command sync
+const YOUR_SERVER_ID = '1448399752201900045';  // your server ID
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
@@ -40,7 +40,7 @@ async function loadKeys() {
   }
 }
 
-// Save keys to GitHub (commit)
+// Save to GitHub
 async function saveKeys(commitMsg = 'Update active keys via bot') {
   const content = Buffer.from(JSON.stringify(keys, null, 2)).toString('base64');
   
@@ -66,7 +66,7 @@ async function saveKeys(commitMsg = 'Update active keys via bot') {
   console.log('Committed keys to GitHub');
 }
 
-// Health check server (prevents Railway "deploying" hang)
+// Health check server (fixes Railway "deploying" hang)
 const http = require('http');
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
@@ -79,7 +79,7 @@ client.once('ready', async () => {
   console.log(`Bot online: ${client.user.tag}`);
   await loadKeys();
 
-  // Register commands in your specific server (instant sync)
+  // Register in your server only (instant)
   const guild = client.guilds.cache.get(YOUR_SERVER_ID);
   if (guild) {
     const genCmd = new SlashCommandBuilder()
@@ -104,7 +104,7 @@ client.once('ready', async () => {
     ]);
     console.log('Commands registered INSTANTLY in your server');
   } else {
-    console.log('Guild not found - falling back to global registration');
+    console.log('Guild not found');
   }
 });
 
