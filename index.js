@@ -10,7 +10,7 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
-const OWNER_ID = '1424707396395339776';  // ← your Discord user ID (only you can use commands)
+const OWNER_ID = '1424707396395339776';  // Your Discord user ID – only you can use commands
 const KEYS_FILE = './keys.json';
 
 // Load or initialize keys
@@ -31,8 +31,7 @@ client.once('ready', async () => {
     .setName('genkey')
     .setDescription('Generate a key with custom uses & expiration')
     .addIntegerOption(opt => opt.setName('uses').setDescription('Max uses (blank = unlimited)').setRequired(false).setMinValue(1))
-    .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1))
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+    .addIntegerOption(opt => opt.setName('hours').setDescription('Hours until expiry (blank = never)').setRequired(false).setMinValue(1));
 
   const deactCmd = new SlashCommandBuilder()
     .setName('deactivate-key')
@@ -53,7 +52,7 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
-  // Only your ID can use these commands
+  // Only you (the owner) can use these commands
   if (interaction.user.id !== OWNER_ID) {
     return interaction.reply({ content: 'Only the bot owner can use these commands.', ephemeral: true });
   }
@@ -62,15 +61,18 @@ client.on('interactionCreate', async interaction => {
     const maxUses = interaction.options.getInteger('uses');
     const hours = interaction.options.getInteger('hours');
 
+    // Generate random key
     const part1 = Math.random().toString(36).slice(2, 7).toUpperCase();
     const part2 = Math.random().toString(36).slice(2, 7).toUpperCase();
     const key = `FED-${part1}-${part2}`;
 
+    // Calculate expiration
     let expires = null;
     if (hours) {
       expires = Date.now() + (hours * 60 * 60 * 1000);
     }
 
+    // Add to keys
     keys[key] = {
       active: true,
       remainingUses: maxUses || null,
@@ -81,6 +83,7 @@ client.on('interactionCreate', async interaction => {
 
     saveKeys();
 
+    // Reply
     let msg = `**Key generated & activated:**\n\`\`\`${key}\`\`\``;
     msg += `\nUses allowed: ${maxUses ? maxUses : 'unlimited'}`;
     msg += `\nExpires: ${hours ? `in ${hours} hours` : 'never'}`;
