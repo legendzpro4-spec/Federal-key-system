@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment / secrets
+.env
+*.env.*
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Data files created by the bot
+whitelist.json
+blacklist.json
+logged.txt
+*.log
+
+# Railway / deployment
+.railway/
+.railway.json
+railway.json
+
+# macOS / editor junk
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
